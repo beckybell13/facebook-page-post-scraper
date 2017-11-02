@@ -2,20 +2,22 @@ import json
 import datetime
 import csv
 import time
+import re
+import random
 try:
     from urllib.request import urlopen, Request
 except ImportError:
     from urllib2 import urlopen, Request
 
-app_id = "<FILL IN>"
-app_secret = "<FILL IN>"  # DO NOT SHARE WITH ANYONE!
 page_id = "beaverconfessions"
+file_id = "beaverconfessions"
+access_token = "USER_TOKEN_HERE"
 
 # input date formatted as YYYY-MM-DD
-since_date = "YYYY-MM-DD"
-until_date = "YYYY-MM-DD"
+since_date = "2012-01-01"
+until_date = "2017-11-02"
 
-access_token = app_id + "|" + app_secret
+REPLACE_TAGGED_NAMES = False
 
 
 def request_until_succeed(url):
@@ -50,12 +52,8 @@ def getFacebookPageFeedUrl(base_url):
 
     # Construct the URL string; see http://stackoverflow.com/a/37239851 for
     #   reactions parameters
-    # fields = "&fields=message,link,created_time,type,name,id," + \
-    #     "comments.limit(0).summary(true),shares,reactions" + \
-    #     ".limit(0).summary(true)"
-
-    # only get status_id, status_message, and status_published
-    fields = "&fields=message,link,created_time,name,id,tags,place"
+    fields = "&fields=message,link,created_time,id," + \
+        "tags,place,reactions.limit(0).summary(true)"
 
     return base_url + fields
 
@@ -88,28 +86,46 @@ def getReactionsForStatuses(base_url):
     return reactions_dict
 
 
-
 """
 Filters messages based on the following criteria:
     1) Remove tagged names (might have to ignore for statuses...also might not be a problem)
     2) Remove links
+    3) Remove special characters and emojis
 """
 def filterMessage(status_message, link, tags):
-    #print(status_message)
+    # Remove any new lines or carriage returns within message
+    status_message = re.sub(r'[\r\n]+', ' ', status_message)
+
     if link != '':
-        print 'link found in status:'
-        print(status_message)
-        print link
-        status_message = status_message.replace(link, '') #should only be one instance...
-        print(status_message)
+        status_message = status_message.replace(link, '')
+
+    # Use regex to remove links, because FB API is not helpful here :/
+    status_message = re.sub(r'https?:\/\/[^ ]*', '', status_message)
+
     if tags != []:
-        print 'tag(s) found in status:'
-        print(status_message)
-        print(tags)
+        # print 'tag(s) found in status:'
+        # print(status_message)
+        # print(tags)
         for t in tags:
-            status_message = status_message.replace(t, '', 2) #TODO: test
-        print(status_message)
-    return status_message.strip()
+            # print status_message # tags in confession posts are very rare, curious to see what they are
+            # print t # Also: this might just return the user id...which doesn't help...
+            if REPLACE_TAGGED_NAMES:
+                status_message = status_message.replace(t, '')
+                status_message = re.sub(r"(^ *[',!?.:;] *)|( +[',.:;]s?)", "", status_message)
+            else:
+                status_message = status_message.replace(t, ' CUSTOM_NAME ')
+        #print(status_message)
+
+    # Remove any special unicode characters
+    status_message = re.sub(r'(?!\\u2019|\\u2018)\\u[0-9A-Fa-f]{4,8}', '', status_message.encode('unicode_escape'), flags=re.IGNORECASE)
+    # Replace fancy apostrophe/quote characters
+    status_message = re.sub(r'(\\u2019|\\u2018)', "'", status_message.encode('unicode_escape'), flags=re.IGNORECASE)
+    #Remove lingering back-slashes...
+    status_message = re.sub(r"\\", "", status_message)
+
+    status_message = ' '.join(status_message.split())
+
+    return status_message
 
 
 def processFacebookPageFeedStatus(status):
@@ -123,20 +139,14 @@ def processFacebookPageFeedStatus(status):
     status_id = status['id']
 
     status_message = '' if 'message' not in status else \
-        unicode_decode(status['message'])
-    link_name = '' if 'name' not in status else \
-        unicode_decode(status['name'])
+        status['message']
     status_link = '' if 'link' not in status else \
-        unicode_decode(status['link'])
+        status['link']
     tags = [] if 'tags' not in status else \
-        map(lambda x: unicode_decode(x), status['tags'])
+        status['tags']
 
-
-    """
-    Process message here
-    """
-    # QUESTION: what about multiple links in status?
-    status_message = filterMessage(status_message, status_link, tags)
+    # Pre-process message content
+    status_message = unicode_decode(filterMessage(status_message, status_link, tags))
 
     # Time needs special care since a) it's in UTC and
     # b) it's not easy to use in statistical programs.
@@ -149,28 +159,18 @@ def processFacebookPageFeedStatus(status):
         '%Y-%m-%d %H:%M:%S')  # best time format for spreadsheet programs
 
     # Nested items require chaining dictionary keys.
+    num_reactions = 0 if 'reactions' not in status else \
+        status['reactions']['summary']['total_count']
 
-    # num_reactions = 0 if 'reactions' not in status else \
-    #     status['reactions']['summary']['total_count']
-    # num_comments = 0 if 'comments' not in status else \
-    #     status['comments']['summary']['total_count']
-    # num_shares = 0 if 'shares' not in status else status['shares']['count']
-
-    # print 'id {} // msg {}\n'.format(status_id, status_message)
-    return (status_id, status_published, status_message)
-
-    # return (status_id, status_message, link_name, status_type, status_link,
-    #         status_published, num_reactions, num_comments, num_shares)
+    return (status_id, status_published, status_message, num_reactions)
 
 
 def scrapeFacebookPageFeedStatus(page_id, access_token, since_date, until_date):
-    with open('data\{}_facebook_statuses.csv'.format(page_id), 'w') as file:
+    with open('data\{}_facebook_statuses.csv'.format(page_id), 'wb') as file:
         w = csv.writer(file)
-        # w.writerow(["status_id", "status_message", "link_name", "status_type",
-        #             "status_link", "status_published", "num_reactions",
-        #             "num_comments", "num_shares", "num_likes", "num_loves",
-        #             "num_wows", "num_hahas", "num_sads", "num_angrys",
-        #             "num_special"])
+        w.writerow(["status_id", "status_published", "status_message", "num_reactions",
+                    "num_likes", "num_loves", "num_wows", "num_hahas", "num_sads",
+                    "num_angrys", "num_special"])
 
         has_next_page = True
         num_processed = 0
@@ -192,26 +192,24 @@ def scrapeFacebookPageFeedStatus(page_id, access_token, since_date, until_date):
 
             url = getFacebookPageFeedUrl(base_url)
             statuses = json.loads(request_until_succeed(url))
-            # reactions = getReactionsForStatuses(base_url)
+            reactions = getReactionsForStatuses(base_url)
 
             for status in statuses['data']:
 
                 # Ensure it is a status with the expected metadata
-                # if 'reactions' in status:
-                #     status_data = processFacebookPageFeedStatus(status)
-                #     reactions_data = reactions[status_data[0]]
-                #
-                #     # calculate thankful/pride through algebra
-                #     num_special = status_data[6] - sum(reactions_data)
-                #     w.writerow(status_data + reactions_data + (num_special,))
+                if 'reactions' in status:
+                    status_data = processFacebookPageFeedStatus(status)
+                    reactions_data = reactions[status_data[0]]
 
-                status_data = processFacebookPageFeedStatus(status)
+                    # calculate thankful/pride through algebra
+                    num_special = status_data[-1] - sum(reactions_data)
 
-                status_message = status_data[2]
-
-                # Enforce length criteria
-                if len(status_message) >= 50 and len(status_message) <= 280:
-                    w.writerow(status_data)
+                    # Enforce length criteria
+                    status_message = status_data[-2]
+                    if len(status_message) >= 50 and len(status_message) <= 280:
+                        # Enforce actual confession post by checking for beginning '#''
+                        if status_message[0] == '#':
+                            w.writerow(status_data + reactions_data + (num_special,))
 
                 num_processed += 1
                 if num_processed % 500 == 0:

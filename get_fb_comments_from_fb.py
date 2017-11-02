@@ -5,6 +5,7 @@ import datetime
 import csv
 import time
 import re
+import random
 try:
     from urllib.request import urlopen, Request
 except ImportError:
@@ -12,8 +13,9 @@ except ImportError:
 
 page_id = "beaverconfessions"
 file_id = "beaverconfessions"
-access_token = "YOUR_USER_TOKEN_HERE"
+access_token = "EAACEdEose0cBAEVvZAdFoVDZAQqLxmtcdMuIbIhKVT29DBhwZB57PJso8bXfXSbAE4DNcXM5ZB5WVgU87sb2ReoEDJxGXFNllI3ZAceLShZBgLEwUPdcM3KsVGGvS182cnZAsOUW2mCT565hOS2CjhkpGLvPqABjADSZC1ykXbuMRNy1HE8cO44JjBsEu1r52vVHNdrAWnAP3wZDZD"
 
+REPLACE_TAGGED_NAMES = False
 
 def request_until_succeed(url):
     req = Request(url)
@@ -82,7 +84,7 @@ def getReactionsForComments(base_url):
 
 """
 Filters messages based on the following criteria:
-    1) Remove tagged names (might have to ignore for statuses...also might not be a problem)
+    1) Remove tagged names
     2) Remove links
     3) Remove special characters and emojis
 """
@@ -100,7 +102,14 @@ def filterMessage(status_message, tags, attachment):
         for t in tags:
             # include page or group tags, but not users
             if t['type'] == 'user':
-                status_message = status_message.replace(t['name'], ' CUSTOM_NAME ')
+                if REPLACE_TAGGED_NAMES:
+                    status_message = status_message.replace(t['name'], '')
+                    # Remove floating punctuation at beginning of string
+                    # Remove floating punctuation or 's anywhere else
+                    # Floating punctuation defined as certain punctuation marks preceded by at least one space
+                    status_message = re.sub(r"(^ *[',!?.:;] *)|( +[',.:;]s?)", "", status_message)
+                else:
+                    status_message = status_message.replace(t['name'], ' CUSTOM_NAME ')
 
     # Remove any special unicode characters
     status_message = re.sub(r'(?!\\u2019|\\u2018)\\u[0-9A-Fa-f]{4,8}', '', status_message.encode('unicode_escape'), flags=re.IGNORECASE)
@@ -109,7 +118,13 @@ def filterMessage(status_message, tags, attachment):
     #Remove lingering back-slashes...
     status_message = re.sub(r"\\", "", status_message)
 
-    return ' '.join(status_message.split())
+    status_message = ' '.join(status_message.split())
+    
+    # Add fake confession number
+    fake_confession_num = random.randint(1,99999)
+    status_message = '#{} {}'.format(fake_confession_num, status_message)
+
+    return status_message
 
 
 def processFacebookComment(comment, status_id, parent_id=''):

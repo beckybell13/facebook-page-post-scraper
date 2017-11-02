@@ -13,7 +13,7 @@ except ImportError:
 
 page_id = "beaverconfessions"
 file_id = "beaverconfessions"
-access_token = "EAACEdEose0cBAEVvZAdFoVDZAQqLxmtcdMuIbIhKVT29DBhwZB57PJso8bXfXSbAE4DNcXM5ZB5WVgU87sb2ReoEDJxGXFNllI3ZAceLShZBgLEwUPdcM3KsVGGvS182cnZAsOUW2mCT565hOS2CjhkpGLvPqABjADSZC1ykXbuMRNy1HE8cO44JjBsEu1r52vVHNdrAWnAP3wZDZD"
+access_token = "USER_ACCESS_TOKEN"
 
 REPLACE_TAGGED_NAMES = False
 
